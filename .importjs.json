@@ -1,0 +1,8 @@
+{
+  "lookupPaths": [
+    "node_modules/react-toolbox/components/**/*.js",
+    "app/src/context",
+    "app/src/components",
+    "app/src/screens",
+  ]
+}
