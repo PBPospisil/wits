@@ -8,43 +8,30 @@ var polyUtil = require('polyline-encoded');
 import GetWeather from './GetWeather';
 
 
-
-const GetRoute = () => {
-
+export default () => {
+  console.log('in get route')
   const { state, setLocationData } = useContext(Context);
 
-  const [readyForUpdate, setReadyForUpdate] = useState(false);
   const [hasUpdated, setHasUpdated] = useState(false);
+  const [readyForUpdate, setReadyForUpdate] = useState(false);
+  const [citiesOnRoute, setCitiesOnRoute] = useState([]);
 
-  // //console.log(state);
-  //
-  // const origin = state.find(place => {
-  //   place.id === '@';
-  // });
-  // const destination = state.find(place => {
-  //   place.id === '$';
-  // });
-
-  //console.log(origin, destination);
+  const getDepartureLocation = () => {
+    return locationState.find(location => location.id == '1').name
+  };
+  const getDestinationLocation = () => {
+    return locationState.find(location => location.id == '-1').name
+  };
+  const getDepartureCoordinates = () => {
+    return locationState.find(location => location.id == '1').coordinates
+  };
+  const getDestinationCoordinates = () => {
+    return locationState.find(location => location.id == '-1').coordinates
+  };
 
   const origin = {lat: 53.631611, lng: -113.323975};
   const destination = {lat: 51.05011, lng: -114.08529};
 
-  const [citiesOnRoute, setCitiesOnRoute] = useState([]);
-  const [routeCoordinates, setRouteCoordinates] = useState([]);
-
-  function onlyUnique(arr) {
-    var flags = [];
-    var output = [];
-    var l = arr.length;
-    var i;
-    for (i=0; i<l; i++) {
-      if (flags.includes(arr[i].name)) continue;
-      flags.push(arr[i].name);
-      output.push({ 'name': arr[i].name, 'coordinates': arr[i].coordinates });
-    }
-    return output;
-  }
 
   function toRad(val) {
     return val * Math.PI / 180;
@@ -57,6 +44,8 @@ const GetRoute = () => {
     const latDeltaRads = latBRads - latARads;
     const lngDeltaRads = toRad(pointB.lng - pointA.lng);
 
+    console.log('in math')
+
     var a = (Math.sin(latDeltaRads/2) * Math.sin(latDeltaRads/2) +
              (Math.cos(latARads) * Math.cos(latBRads) *
              Math.sin(lngDeltaRads/2) * Math.sin(lngDeltaRads/2)));
@@ -66,6 +55,7 @@ const GetRoute = () => {
     var d = R * c;
 
     if (d > Threshold) {
+      console.log(pointA, pointB, d)
       return true;
     } else {
       return false;
@@ -73,19 +63,33 @@ const GetRoute = () => {
   }
 
   function cityDistanceThreshold(cities, origin_, isFarEnough) {
-    if (distanceFrom(cities[0].coordinates, origin_, 50)) {
+    console.log('in city distance Threshold')
+    if (distanceFrom(cities[0].coordinates, origin_, 100)) {
+      console.log(cities.length, '1')
+
       if (cities.length == 1) {
+        console.log(cities[0])
+
         isFarEnough.push(cities[0]);
+        console.log(cities[0])
+
         return isFarEnough;
       }
+      console.log(cities[0])
+
       isFarEnough.push(cities[0]);
+      console.log(cities[0])
       cityDistanceThreshold(cities.slice(1), cities[0].coordinates, isFarEnough);
       return isFarEnough;
 
     } else {
+      console.log(cities.length, '2')
+
       if (cities.length == 1) {
         isFarEnough.pop()
         isFarEnough.push(cities[0])
+        console.log(cities[0], isFarEnough)
+
         return isFarEnough
       }
       cityDistanceThreshold(cities.slice(1), origin_, isFarEnough)
@@ -93,27 +97,49 @@ const GetRoute = () => {
     }
   }
 
-   function setStateAsync(state) {
-     return new Promise((resolve) => {
-       setCitiesOnRoute([...citiesOnRoute, state])
-     });
-   }
+  function polylineToCoordinateObject(polyline) {
+    return polyline.map(coordinate => {
+      return {
+        coordinates: {
+          lat: coordinate[0],
+          lng: coordinate[1]
+        }
+      }
+    });
+  };
 
-  var time = new Date();
+  function coordinateObjectToPolyline(coordinates) {
+    return coordinates.map(coordinate => {
+      return [coordinate.coordinates.lat, coordinate.coordinates.lng]
+    });
+  };
 
   useEffect(() => {
     const getRoute = async () => {
       try {
-        let res = await axios.get('http://192.168.6.110:5000/route/v1/driving/-113.323975,53.631611;-114.0719,51.0447');
-        var latlngs = polyUtil.decode(res.data.routes[0].geometry);
-        let coordPromises = await Promise.all(latlngs.map(async (place) => {
+        const departureCoordinates = getDepartureCoordinates();
+        const destinationCoordinates = getDestinationCoordinates();
+        let res = await axios.get(`https://maps.googleapis.com/maps/api/directions/json?origin=${departureCoordinates.lat},${departureCoordinates.lng}&destination=${destinationCoordinates.lat},${destinationCoordinates.lng}&key=${GOOGLE_GEOCODING_API_KEY}`);
+        var latlngs = polyUtil.decode(res.data.routes[0].overview_polyline.points);
+        ob_ = polylineToCoordinateObject(latlngs)
+        console.log(latlngs, ob_)
+        newlat = coordinateObjectToPolyline(cityDistanceThreshold(ob_, getDepartureCoordinates(), []))
+        console.log(newlat)
+        new WeatherDatabase('test.db').createRoutesTable(
+          {
+            latlngs: latlngs,
+            departure_location: getDepartureLocation(),
+            destination_location: getDestinationLocation()
+          }
+        );
+        let coordPromises = await Promise.all(newlat.map(async (place) => {
           try {
             let res = await axios.get(`http://api.geonames.org/findNearbyPlaceNameJSON?lat=${place[0]}&lng=${place[1]}&cities=cities10000&radius=20&username=wits`);
-
             if (res.data) {
               if (res.data.geonames) {
                 if (res.data.geonames[0]) {
                   if (res.data.geonames[0].name) {
+                    console.log(res.data.geonames[0].lat, res.data.geonames[0].name, place)
                     return {
                       id: '',
                       name: res.data.geonames[0].name,
@@ -133,11 +159,12 @@ const GetRoute = () => {
           };
         }));
         coordPromises = coordPromises.filter(x => x != null);
-        coordPromises.push({ id: '', name: 'Calgary', address: '', coordinates: destination })
+        console.log('here')
+        console.log(coordPromises)
+        coordPromises.push({ id: '', name: getDestinationLocation(), address: '', coordinates: getDestinationCoordinates() })
 
-        var citiesSpacedByThreshold = cityDistanceThreshold(onlyUnique(coordPromises), {lat: 53.631611, lng: -113.323975}, [])
-        setCitiesOnRoute([{ id: '', name: 'Edmonton', address: '', coordinates: origin }, ...citiesSpacedByThreshold]);
-        setRouteCoordinates(latlngs);
+        var citiesSpacedByThreshold = cityDistanceThreshold(coordPromises, getDepartureCoordinates(), [])
+        setCitiesOnRoute(citiesSpacedByThreshold);
 
       } catch (err) {
         console.log(err);
@@ -147,28 +174,31 @@ const GetRoute = () => {
     getRoute();
   }, []);
 
-  if (routeCoordinates.length != 0 && !hasUpdated){
-    setReadyForUpdate(true);
+  console.log(citiesOnRoute)
+  if (citiesOnRoute.length != 0 && !hasUpdated && !readyForUpdate){
+    console.log('here')
+    setReadyForUpdate(true)
   };
   if (readyForUpdate) {
     citiesOnRoute.map((place, index) => {
-      if (place.name != state.find(leafNode => leafNode.id == '@').name &&
-          place.name != state.find(leafNode =>leafNode.id == '$').name) {
-        setLocationData(Math.floor(Math.random() * 99999), place.name, '', place.coordinates)
-        setReadyForUpdate(false);
-        setHasUpdated(true);
-
-        //console.log(place)
+      console.log(place.name)
+      if (place.name != state.find(leafNode => leafNode.id == '1').name &&
+          place.name != state.find(leafNode =>leafNode.id == '-1').name) {
+        //console.log(place.name)
+        setLocationData('location', Math.floor(Math.random() * 99999), place.name, '', place.coordinates)
+      } else {
+        setHasUpdated(true)
       }
     });
   };
 
+  console.log(locationState.length, citiesOnRoute.length)
 
-  return (
-    <View>
-      { hasUpdated && citiesOnRoute.length == state.length ? <GetWeather /> : null }
-    </View>
-  );
+  if(hasUpdated && state.length - citiesOnRoute.length == 1) {
+    GetWeather()
+  }
+
+  return
 };
 
 const styles = StyleSheet.create({
@@ -177,5 +207,3 @@ const styles = StyleSheet.create({
     width: '100%'
   }
 });
-
-export default GetRoute;
