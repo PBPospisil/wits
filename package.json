@@ -14,7 +14,7 @@
     "@react-native-community/datetimepicker": "^2.1.2",
     "@react-native-community/masked-view": "^0.1.6",
     "@react-navigation/drawer": "^5.1.1",
-    "axios": "^0.19.2",
+    "axios": "^0.21.1",
     "dark-sky": "^1.1.5",
     "expo": "~36.0.0",
     "expo-sqlite": "^8.0.0",
